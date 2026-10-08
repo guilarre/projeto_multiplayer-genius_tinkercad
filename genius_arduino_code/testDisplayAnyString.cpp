@@ -9,7 +9,8 @@ enum Color : uint8_t {
     AMARELO = 3
 };
 
-// protótipo evita falha do pré-processador do arduino
+// protótipos de nossas funções aqui pra evitar falha do
+// pré-processador do arduino
 void exibirCorLcd(Color cor);
 
 // pinos do lcd
@@ -23,7 +24,8 @@ const uint8_t PIN_LCD_D7 = A3;
 // NOTE: inicialização do display
 LiquidCrystal lcd(PIN_LCD_RS, PIN_LCD_EN, PIN_LCD_D4, PIN_LCD_D5, PIN_LCD_D6, PIN_LCD_D7);
 
-// strings pras cores na memoria flash (PROGMEM)
+// NOTE: strings na memoria flash (PROGMEM)
+// strings pras cores
 const char VERDE_STR[] PROGMEM = "VERDE";
 const char VERMELHO_STR[] PROGMEM = "VERMELHO";
 const char AZUL_STR[] PROGMEM = "AZUL";
@@ -40,11 +42,10 @@ const char* const COLOR_TO_STRING[] PROGMEM = {
 
 // controla renderização pra ser apenas 1 vez
 // e não ser afetada pelo loop()
-
 // HACK: isso não faz nenhum sentido em outros contextos.
 // neste teste, o loop está chamando exibirCorLcd sempre,
 // executa apenas 1 vez e nunca mais desce pro resto do
-// código
+// código.
 bool lcdPrecisaAtualizar = true;
 
 void exibirCorLcd(Color cor) {

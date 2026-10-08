@@ -1,10 +1,22 @@
+// TODO: menuSetup()
+// - ligar leds no momento de selecionar num de jogadores no menuSetup()
+// pra ter indicação visual de onde fica o botão de cada jogador
+// BACKLOG: - selecionar num de jogadores através dos botões de jogadores??
+//
 // TODO: checar quantos segundos leva pra mostrar sequencia atual e se deve diminuir ao longo do jogo
+//
 // TODO: pensar como será sistema de pontuação
+//
 // TODO: pensar no feedback ao user -> luz, som, ...?
+// som qnd apertar botao, qnd acertar, errar..
+//
 // TODO: persistência na memória pra guardar highscore
+//
 // TODO: pesquisar em como deixar a mensagem persistir na tela se chamada dentro de loop()
-// TEST: checar usos de char*
+//
 // TODO: URGENTE: sequência de cores NÃO PODE TER REPETIÇÕES
+//
+// TEST: checar usos de char*
 
 #include <stdint.h> // REMOVE:
 #include <stdlib.h>
@@ -28,7 +40,7 @@ enum Color : uint8_t {
 };
 
 // NOTE: const globais
-// FIX: vai precisar ser usando PROGMEM e 
+// FIX: vai precisar ser usando PROGMEM e
 // ref de strings pras cores
 const char *colorToString[] = {"VERDE", "VERMELHO", "AZUL", "AMARELO"};
 // pinos leds e botões
@@ -36,6 +48,10 @@ const uint8_t PINOS_LEDS[MAX_LEDS] = {13, 12, 11, 10};
 const uint8_t PINOS_BOTOES[MAX_LEDS] = {9, 8, 7, 6};
 const uint8_t PINO_BOTAO_MENU = 5;
 const uint8_t PINO_BOTAO_ON_OFF = 4;
+// constantes de tempo p clique
+const uint16_t TEMPO_DEBOUNCE = 50; //50ms pra como filtro pra ruidos
+const uint16_t TEMPO_CLIQUE_DUPLO = 300; // CHECK: ver se vai usar msm
+const uint16_t TEMPO_CLIQUE_LONGO = 1000;
 // pinos do lcd
 const uint8_t PIN_LCD_RS = 2;
 const uint8_t PIN_LCD_EN = 3;
@@ -43,12 +59,6 @@ const uint8_t PIN_LCD_D4 = A0;
 const uint8_t PIN_LCD_D5 = A1;
 const uint8_t PIN_LCD_D6 = A2;
 const uint8_t PIN_LCD_D7 = A3;
-// constantes de tempo
-const uint16_t TEMPO_DEBOUNCE = 50; //50ms pra como filtro pra ruidos
-const uint16_t TEMPO_CLIQUE_DUPLO = 300; // CHECK: ver se vai usar msm
-const uint16_t TEMPO_CLIQUE_LONGO = 1000;
-// buffer pro display
-const char* stringBuffer = new char[STRING_BUFFER_SIZE];
 
 // NOTE: inicialização do display
 LiquidCrystal lcd(PIN_LCD_RS, PIN_LCD_EN, PIN_LCD_D4, PIN_LCD_D5, PIN_LCD_D6, PIN_LCD_D7);
@@ -60,13 +70,6 @@ unsigned long tempoPressionado = 0;
 unsigned long tempoLiberado = 0;
 uint8_t contagemCliques = 0;
 bool cliqueLongoProcessado = false;
-
-// REMOVE: strings para menus
-const char promptInicial[] = "Escolha a qtd de jogadores...";
-const char opcaoSetup1[] = "1 jogadores";
-const char opcaoSetup2[] = "2 jogadores";
-const char opcaoSetup3[] = "3 jogadores";
-const char opcaoSetup4[] = "4 jogadores";
 
 // NOTE: fila pra sequência atual de cores (FIFO)
 struct filaCor {
@@ -117,7 +120,8 @@ class Player {
         }
 };
 
-// NOTE: lógica do jogo
+// NOTE: vars globais e funções do jogo
+
 // NOTE: sequência de cores
 // variável global pra guardar sequência
 filaCor sequenciaAtualGlobal;
@@ -127,7 +131,7 @@ filaCor jogadaAtual;
 void resetJogo() {
     sequenciaAtualGlobal = filaCor(); //valores padrões
 }
-// função pra inserir uma cor aleatória na var global
+// TEST: função pra inserir uma cor aleatória na var global
 void randomColor() {
     uint8_t randNum = random(0, 4); //de 0 a 3
     sequenciaAtualGlobal.enqueue(static_cast<Color>(randNum));
@@ -147,12 +151,10 @@ bool verificarJogada(filaCor jogadaAtual) {
 }
 
 // NOTE: menus
-// menu setup: pegar qtd de jogadores desejada e setar globalmente (totalPlayers)
-bool primeiraRodada = true;
 
 // TODO:
-void menu_setup() {
-    primeiraRodada = false;
+// menu de setup: pegar qtd de jogadores desejada e setar globalmente (totalPlayers)
+void menuSetup() {
     // TODO: printar o menu, solicitar totalPlayers...
     const char promptInicial[] = "Escolha a qtd de jogadores...";
     const char opcaoSetup1[] = "1 jogadores";
@@ -246,7 +248,7 @@ void setup() {
     randomSeed(analogRead(2));
     Serial.begin(9600); // REMOVE: pra teste apenas
 
-    menu_setup(); // NOTE: user escolhe qtd de jogadores
+    menuSetup(); // NOTE: user escolhe qtd de jogadores
 }
 
 // NOTE: loop contínuo do jogo
