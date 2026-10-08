@@ -10,10 +10,19 @@ enum Color : uint8_t {
     AMARELO = 3
 };
 
+enum AcaoBotao : uint8_t {
+    ACAO_NENHUMA = 0,
+    CLIQUE_SIMPLES,
+    CLIQUE_DUPLO,
+    CLIQUE_LONGO
+};
+
 // protótipos de nossas funções aqui pra evitar falha do
 // pré-processador do arduino
+AcaoBotao verificarBotaoMenu();
+void menuSetup();
 void exibirCorLcd(Color cor);
-void printa_string(const char* const tabelaString);
+void printa_string(const char* const tabelaString, uint8_t idx, uint8_t screenY);
 
 // pinos do lcd
 const uint8_t PIN_LCD_RS = 2;
@@ -56,7 +65,7 @@ const char* const MENU_SETUP_MSGS[] PROGMEM = {
 // NOTE: vars, funções, loop
 
 // vars globais para mapeamento dos cliques do botão menu
-uint8_t ultimoEstadoBotao = HIGH; //HIGH por conta do INPUT_PULLUP
+uint8_t ultimoEstadoBotaoMenu = HIGH; //HIGH por conta do INPUT_PULLUP
 unsigned long tempoUltimaMudanca = 0;
 unsigned long tempoPressionado = 0;
 unsigned long tempoLiberado = 0;
@@ -64,21 +73,28 @@ uint8_t contagemCliques = 0;
 bool cliqueLongoProcessado = false;
 
 // printa string no display LCD (x do cursor = 0)
+// TEST: checar uso de const char* const
 void printaString(const char* const tabelaString, uint8_t idx, uint8_t screenY) {
     const char* string = (const char*)pgm_read_ptr(&(tabelaString[idx]));
 
-    lcd.clear();
+    lcd.setCursor(0, screenY);
+    lcd.print("                ");
     lcd.setCursor(0, screenY);
     lcd.print((const __FlashStringHelper*)string);
+}
+
+AcaoBotao verificarBotaoMenu() {
+
 }
 
 void menuSetup() {
     uint8_t estadoBotaoMenu = digitalRead(PINO_BOTAO_MENU);
     printaString(MENU_SETUP_MSGS, 0);
 
-    // TODO: parei aqui
-    if (estadoBotaoMenu == 0) {
-        
+    // BACKLOG: blinkingCursor(); //while awaits input??
+
+    // TODO:
+    if (estadoBotaoMenu == 0 && ) {
     }
 }
 
@@ -101,6 +117,4 @@ extern "C" void setup() {
 }
 
 extern "C" void loop() {
-    Color corPraMostrar = VERDE;
-    exibirCorLcd(corPraMostrar); // HACK: continua sendo chamado pra sempre
 }
