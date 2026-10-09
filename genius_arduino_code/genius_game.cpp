@@ -1,7 +1,8 @@
-// TODO: menuSetup()
+// BACKLOG: - selecionar num de jogadores através dos botões de jogadores??
+//
+// TODO:
 // - ligar leds no momento de selecionar num de jogadores no menuSetup()
 // pra ter indicação visual de onde fica o botão de cada jogador
-// BACKLOG: - selecionar num de jogadores através dos botões de jogadores??
 //
 // TODO: checar quantos segundos leva pra mostrar sequencia atual e se deve diminuir ao longo do jogo
 //
@@ -16,8 +17,12 @@
 //
 // TODO: FALTA LOGICA DO ON/OFF
 //
-// TEST: checar usos de char*
+// FIX: os turnos dagt devem incrementar conforme cada player joga
+// TEST: talvez deixar sequencia até 15 ou 20...
+//
+// FIX: checar usos de char*
 
+#include <cstdint>
 #include <stdint.h> // REMOVE:
 #include <stdlib.h>
 #include <sys/types.h> // CHECK:
@@ -88,12 +93,12 @@ const char* const COLOR_TO_STRING[] PROGMEM = {
     AMARELO_STR
 };
 // menuSetup: strings
-const char PROMPT_SETUP[] PROGMEM = "Escolha:";
+const char PROMPT_SETUP[] PROGMEM = "--  Escolha  --";
 const char OPCAO_1_SETUP[] PROGMEM = "1 jogador";
 const char OPCAO_2_SETUP[] PROGMEM = "2 jogadores";
 const char OPCAO_3_SETUP[] PROGMEM = "3 jogadores";
 const char OPCAO_4_SETUP[] PROGMEM = "4 jogadores";
-const char CONFIRMACAO_SETUP[] PROGMEM = "Confirmado:";
+const char CONFIRMACAO_SETUP[] PROGMEM = "-- Confirmado --";
 // menuSetup: array de strings
 const char* const MENU_SETUP_MSGS[] PROGMEM = {
     PROMPT_SETUP,
@@ -103,14 +108,33 @@ const char* const MENU_SETUP_MSGS[] PROGMEM = {
     OPCAO_4_SETUP,
     CONFIRMACAO_SETUP
 };
-
-// vars globais para mapeamento dos cliques do botão menu
-uint8_t ultimoEstadoBotaoMenu = HIGH; //HIGH por conta do INPUT_PULLUP
-unsigned long tempoUltimaMudanca = 0;
-unsigned long tempoPressionado = 0;
-unsigned long tempoLiberado = 0;
-uint8_t contagemCliques = 0;
-bool cliqueLongoProcessado = false;
+// menuPausa: strings
+const char PROMPT_PAUSA[] PROGMEM = "--   PAUSA   --"; // TODO: loop de pausa
+const char OPCAO_1_PAUSA[] PROGMEM = "Voltar"; // TODO: sai do loop
+const char OPCAO_2_PAUSA[] PROGMEM = "Pontuação"; // TODO: sequencia de pontuação dos players, ordenado
+const char OPCAO_3_PAUSA[] PROGMEM = "Reiniciar jogo"; // TODO:
+const char OPCAO_4_PAUSA[] PROGMEM = "Terminar jogo"; // TODO:
+// menuPausa: array de strings
+const char* const MENU_PAUSA_MSGS[] PROGMEM = {
+    PROMPT_PAUSA,
+    OPCAO_1_PAUSA,
+    OPCAO_2_PAUSA,
+    OPCAO_3_PAUSA,
+    OPCAO_4_PAUSA
+};
+// TODO: lógica pra mostrar de quem é a vez no display
+// player turn: strings
+const char VEZ_P1[] PROGMEM = "-- Player 1 --";
+const char VEZ_P2[] PROGMEM = "-- Player 2 --";
+const char VEZ_P3[] PROGMEM = "-- Player 3 --";
+const char VEZ_P4[] PROGMEM = "-- Player 4 --";
+// player turn: array de strings
+const char* const VEZ_ATUAL_MSGS[] PROGMEM = {
+    VEZ_P1,
+    VEZ_P2,
+    VEZ_P3,
+    VEZ_P4
+}
 
 // NOTE: fila pra sequência atual de cores (FIFO)
 struct filaCor {
@@ -146,30 +170,47 @@ class Player {
         // CHECK: como vai ser a checagem do ranking?
         // uint8_t rank;
         bool ativo;
-        // NOTE: deveria ter uma var pra jogada??
 
         // construtor
         Player() {
             score = 0;
-            ativo = false;
+            ativo = false; //inicia como falso
             // rank = 0;
         }
 
         void reset() {
             score = 0;
-            bool ativo = false;
+            ativo = false; //desativa player
         }
+
+        void ativar() {
+            ativo = true; //ativa player
+        }
+
+        void desativar() {
+            ativo = false; //desativa player
+        }
+
 };
 
 // NOTE: vars globais e funções do jogo
 
-// NOTE: vars e funções pras filaCor
-filaCor sequenciaAtualGlobal;
-// variável global da jogada atual (vai ser resetada a cada tentativa correta)
+// NOTE: vars globais para mapeamento dos cliques do botão menu
+uint8_t ultimoEstadoBotaoMenu = HIGH; //HIGH por conta do INPUT_PULLUP
+unsigned long tempoUltimaMudanca = 0;
+unsigned long tempoPressionado = 0;
+unsigned long tempoLiberado = 0;
+uint8_t contagemCliques = 0;
+bool cliqueLongoProcessado = false;
+
+// NOTE: vars e funções filaCor
+filaCor sequenciaAtualGlobal; //fila global
+// TEST: variável global da jogada atual (vai ser resetada a cada tentativa correta)
 filaCor jogadaAtual;
 // TEST: função pra inserir uma cor aleatória na var global
 void randomColor() {
-    uint8_t randNum = random(0, 4); //de 0 a 3
+    uint8_t randNum = random(0, 4); //num aleatório de 0 a 3
+    // insere na var global (damos static_cast de uint8_t -> Color):
     sequenciaAtualGlobal.enqueue(static_cast<Color>(randNum));
 }
 
@@ -178,7 +219,7 @@ void randomColor() {
 Player playerList[MAX_PLAYERS];
 // ponteiro pro player atual
 uint8_t playerAtual = 0;
-// qtd jogadores escolhida
+// qtd jogadores atual // CHECK:checar se qnd muda tá alterando
 uint8_t totalPlayers = 1;
 // função pra iterar até o próx player válido
 void proxPlayer() {
@@ -202,15 +243,21 @@ void resetJogo() {
 }
 // TEST:
 // função pra verificar sequência global com tentativa inserida pelo player
-// CHECK: acho que falta usar dequeue pra verificar a copia?? ou dá no msm?
+// FIX: acho que falta usar dequeue pra verificar a copia??
 bool verificarJogada(filaCor jogadaAtual) {
     // cria uma cópia da variável global
     filaCor sequenciaAtualCopia = sequenciaAtualGlobal;
     if (jogadaAtual.qtd != sequenciaAtualCopia.qtd) return false;
-    for (int i = 0; i < sequenciaAtualGlobal.qtd; i++) {
+    for (uint8_t i = 0; i < sequenciaAtualGlobal.qtd; i++) {
         if (jogadaAtual.sequenciaCor[i] != sequenciaAtualGlobal.sequenciaCor[i]) return false;
     }
     return true;
+}
+void mostrarPontuacaoOrdenada() {
+    uint8_t ordem[MAX_LEDS];
+    for (uint8_t i = 0; i < totalPlayers; i++) {
+        // TODO: PAREI AQ
+    }
 }
 
 // NOTE: funções pro display
@@ -281,64 +328,99 @@ AcaoBotao verificarBotaoMenu() {
 // NOTE: menus
 
 void menuSetup() {
-    uint8_t opcaoSelecionada = 1; // padrão: 1 jogador (índice 1 no MENU_SETUP_MSGS)
+    uint8_t opcaoSelecionada = 1; //opção inicial na tela
 
+    // estados atuais dos botões
     ultimoEstadoBotaoMenu = digitalRead(PINO_BOTAO_MENU);
     contagemCliques = 0;
     cliqueLongoProcessado = false;
 
+    // prompt na tela
     lcd.clear();
-    printaString(MENU_SETUP_MSGS, 0, 0); // Linha 0: Prompt
-    printaString(MENU_SETUP_MSGS, opcaoSelecionada, 1); // Linha 1: Opção
+    printaString(MENU_SETUP_MSGS, 0, 0); //prompt p escolher num jogadores (y=0)
+    printaString(MENU_SETUP_MSGS, opcaoSelecionada, 1); //opção 1 (y=1)
 
     // loop bloqueante até a confirmação da seleção
     while (true) {
         AcaoBotao acao = verificarBotaoMenu();
 
+        // itera entre opções do menu
         if (acao == CLIQUE_SIMPLES) {
-            // avança para a próxima opção (rotaciona de 1 a 4)
+            // opções 1 a 4 circularmente
             opcaoSelecionada = (opcaoSelecionada % 4) + 1;
             printaString(MENU_SETUP_MSGS, opcaoSelecionada, 1);
         }
+        // se selecionou uma opção (clique duplo ou longo)
         else if (acao == CLIQUE_DUPLO || acao == CLIQUE_LONGO) {
             // seta globalmente
             totalPlayers = opcaoSelecionada;
-            // confirmação da opção
+            // ativa nossos objetos Player na memória
+            for (uint8_t i = 0; i < totalPlayers; i++) {
+                playerList[i].ativar();
+            }
+            // feedback da confirmação
             lcd.clear();
-            printaString(MENU_SETUP_MSGS, 5, 0);
-            printaString(MENU_SETUP_MSGS, opcaoSelecionada, 1);
+            printaString(MENU_SETUP_MSGS, 5, 0); //"confirmado"
+            printaString(MENU_SETUP_MSGS, opcaoSelecionada, 1); //opção
             delay(1500);
-            break;
+            break; //sai do menuSetup
         }
     }
 }
 
 // TODO: menu pausa (mostrar que está em pausa e deixar opções pra mostrar ranking, score, terminar jogo, resetar...)
-void menu_pausa() {
-    // FIX: String -> char*
-    String opcao1 = "Voltar ao jogo";
-    String opcao2 = "Ver pontuação";
-    String opcao3 = "Reiniciar jogo";
-    String opcao4 = "Terminar jogo"; //termina e mostra pontuação
-    String opcao5 = "";
-    String opcao6 = "";
-}
+void menuPausa() {
+    uint8_t opcaoSelecionada = 1; //opção inicial na tela
+
+    // estados atuais dos botões
+    ultimoEstadoBotaoMenu = digitalRead(PINO_BOTAO_MENU);
+    contagemCliques = 0;
+    cliqueLongoProcessado = false;
+
+    // prompt na tela
+    lcd.clear();
+    printaString(MENU_PAUSA_MSGS, 0, 0); //msg de que tá em pausa (y=0)
+    printaString(MENU_PAUSA_MSGS, opcaoSelecionada, 1); //opção 1 (y=1)
+
+    // loop bloqueante até a confirmação da seleção
+    while (true) {
+        AcaoBotao acao = verificarBotaoMenu();
+
+        // itera entre opções do menu
+        if (acao == CLIQUE_SIMPLES) {
+            // opções 1 a 4 circularmente
+            opcaoSelecionada = (opcaoSelecionada % 4) + 1;
+            printaString(MENU_SETUP_MSGS, opcaoSelecionada, 1);
+        }
+        // se selecionou uma opção (clique duplo ou longo)
+        else if (acao == CLIQUE_DUPLO || acao == CLIQUE_LONGO) {
+            // TODO:
+            switch (opcaoSelecionada) {
+                case 1:
+                    break;
+                case 2:
+                    mostrarPontuacaoAtual(); // TODO:
+                    break;
+                case 3:
+                    break;
+                case 4:
+                    break;
+            }
+
+            lcd.clear(); // REMOVE: só pra debug
+            lcd.print("saindo de menuPausa"); // REMOVE: 
+            delay(1000); // REMOVE: 
+            break;
+        }
+    }}
 
 // TODO:
 // função pra receber jogada (com lógica dos botões
 // e acender LED como feedback)
 
-// NOTE: strings pro menu
-// FIX: String -> char*
-String vezPlayer1 = "-- Player 1 --";
-String vezPlayer2 = "-- Player 2 --";
-String vezPlayer3 = "-- Player 3 --";
-String vezPlayer4 = "-- Player 4 --";
-
-
 // TEST: itera e depois mostra pro P1
 void mostrarSequenciaGlobal() {
-    for (int i = 0; i < sequenciaAtualGlobal.qtd; i++) {
+    for (uint8_t i = 0; i < sequenciaAtualGlobal.qtd; i++) {
         Color corAtual = sequenciaAtualGlobal.sequenciaCor[i];
         digitalWrite(PINOS_LEDS[corAtual], HIGH);
         delay(500); //tempo ligado
@@ -356,7 +438,7 @@ void mostrarSequenciaGlobal() {
 // NOTE: em setup, as coisas rodam apenas 1 vez, no início.
 void setup() {
     // aqui realizamos o setup desejado pros pinos do arduino
-    for (int i = 0; i < MAX_LEDS; i++) {
+    for (uint8_t i = 0; i < MAX_LEDS; i++) {
         pinMode(PINOS_LEDS[i], OUTPUT);
         pinMode(PINOS_BOTOES[i], INPUT);
     }
@@ -377,10 +459,11 @@ void setup() {
 // NOTE: loop contínuo do jogo
 // TODO: checagem do tempo de input
 void loop() {
+    // FIX: deve estar errado.. tem que usar verificarBotaoMenu
     // verifica botão menu/pausa
     uint8_t estadoBotaoMenu = digitalRead(PINO_BOTAO_MENU);
     if (estadoBotaoMenu == 1) {
-        menu_pausa();
+        menuPausa();
     }
 
     // se for P1, vai mostrar a sequenciaAtualGlobal nos LEDs
@@ -395,7 +478,7 @@ void loop() {
 
     // recebe até que jogadaAtual.qtd == sequenciaAtualGlobal.qtd
     // e compara jogadaAtual com sequenciaAtualGlobal
-    for (int i = 0; i < MAX_LEDS; i++) {
+    for (uint8_t i = 0; i < MAX_LEDS; i++) {
         uint8_t estadoBotaoAtual = digitalRead(PINOS_BOTOES[i]);
         if (estadoBotaoAtual == 1) {
             jogadaAtual.enqueue(static_cast<Color>(i));
