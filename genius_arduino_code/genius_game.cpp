@@ -18,7 +18,8 @@
 // TODO: FALTA LOGICA DO ON/OFF
 //
 // FIX: os turnos dagt devem incrementar conforme cada player joga
-// TEST: talvez deixar sequencia até 15 ou 20...
+//
+// TEST: talvez deixar sequencia até 20..?
 //
 // FIX: checar usos de char*
 
@@ -31,7 +32,7 @@
 
 #define MAX_LEDS 4
 #define MAX_PLAYERS 4
-#define MAX_SEQUENCIA 10
+#define MAX_SEQUENCIA 15
 #define PONTO_POR_JOGADA 100
 #define STRING_BUFFER_SIZE 100
 
@@ -111,7 +112,7 @@ const char* const MENU_SETUP_MSGS[] PROGMEM = {
 // menuPausa: strings
 const char PROMPT_PAUSA[] PROGMEM = "--   PAUSA   --"; // TODO: loop de pausa
 const char OPCAO_1_PAUSA[] PROGMEM = "Voltar"; // TODO: sai do loop
-const char OPCAO_2_PAUSA[] PROGMEM = "Pontuação"; // TODO: sequencia de pontuação dos players, ordenado
+const char OPCAO_2_PAUSA[] PROGMEM = "Pontuação";
 const char OPCAO_3_PAUSA[] PROGMEM = "Reiniciar jogo"; // TODO:
 const char OPCAO_4_PAUSA[] PROGMEM = "Terminar jogo"; // TODO:
 // menuPausa: array de strings
@@ -134,7 +135,28 @@ const char* const VEZ_ATUAL_MSGS[] PROGMEM = {
     VEZ_P2,
     VEZ_P3,
     VEZ_P4
-}
+};
+// mostrarPontuacaoOrdenada: strings
+const char TITULO[] PROGMEM = "--  Ranking  --";
+const char P1_MSG[] PROGMEM = "P1: ";
+const char P2_MSG[] PROGMEM = "P2: ";
+const char P3_MSG[] PROGMEM = "P3: ";
+const char P4_MSG[] PROGMEM = "P4: ";
+// mostrarPontuacaoOrdenada: array de strings
+const char* const PONTUACAO_MSGS[] PROGMEM = {
+    TITULO,
+    P1_MSG,
+    P2_MSG,
+    P3_MSG,
+    P4_MSG
+};
+// ...
+const char CONFIRMACAO_RESET[] PROGMEM = "Reiniciando...";
+// TODO: confirmação de que terminou o jogo
+// const char CONFIRMACAO_TERMINOU[] = "Desligando...";
+const char* const MSGS_SISTEMA[] PROGMEM {
+    CONFIRMACAO_RESET
+};
 
 // NOTE: fila pra sequência atual de cores (FIFO)
 struct filaCor {
@@ -164,22 +186,25 @@ struct filaCor {
 
 // NOTE: classe player
 class Player {
+    private:
+        // variável estática pra contagem de objetos player
+        static uint8_t countId; //num do player: 1, 2, 3 ou 4
+
     public:
         // atributos
+        uint8_t id;
         uint16_t score;
-        // CHECK: como vai ser a checagem do ranking?
-        // uint8_t rank;
         bool ativo;
 
         // construtor
         Player() {
+            id = ++countId;
             score = 0;
             ativo = false; //inicia como falso
-            // rank = 0;
         }
 
         void reset() {
-            score = 0;
+            score = 0; //reseta score
             ativo = false; //desativa player
         }
 
@@ -192,6 +217,9 @@ class Player {
         }
 
 };
+
+// inicializando fora da função (obrigatório em C++)
+uint8_t Player::contadorId = 0;
 
 // NOTE: vars globais e funções do jogo
 
@@ -206,9 +234,9 @@ bool cliqueLongoProcessado = false;
 // NOTE: vars e funções filaCor
 filaCor sequenciaAtualGlobal; //fila global
 // TEST: variável global da jogada atual (vai ser resetada a cada tentativa correta)
-filaCor jogadaAtual;
+filaCor tentativaAtual;
 // TEST: função pra inserir uma cor aleatória na var global
-void randomColor() {
+void newRandomColor() {
     uint8_t randNum = random(0, 4); //num aleatório de 0 a 3
     // insere na var global (damos static_cast de uint8_t -> Color):
     sequenciaAtualGlobal.enqueue(static_cast<Color>(randNum));
@@ -239,24 +267,65 @@ void pontuarPlayer(uint8_t pontos) {
 // NOTE: funções do jogo
 // função pra resetar jogo (caso precise)
 void resetJogo() {
-    sequenciaAtualGlobal = filaCor(); //valores padrões
+    // CHECK: ver se falta mais algo pra resetar:
+    sequenciaAtualGlobal = filaCor(); //valores padrões de filaCor
+    // desativa players
+    for (uint8_t i = 0; i < MAX_PLAYERS; i++) {
+        playerList[i].reset();
+    }
+    playerAtual = 0;
+    totalPlayers = 1;
+
+    // msg confirmando que resetou tudo
+    lcd.clear();
+    printaString(MSGS_SISTEMA, 0, 0);
 }
 // TEST:
 // função pra verificar sequência global com tentativa inserida pelo player
 // FIX: acho que falta usar dequeue pra verificar a copia??
-bool verificarJogada(filaCor jogadaAtual) {
+// deve ter mais erros
+bool verificarJogada(filaCor tentativaAtual) {
     // cria uma cópia da variável global
     filaCor sequenciaAtualCopia = sequenciaAtualGlobal;
-    if (jogadaAtual.qtd != sequenciaAtualCopia.qtd) return false;
+    if (tentativaAtual.qtd != sequenciaAtualCopia.qtd) return false;
     for (uint8_t i = 0; i < sequenciaAtualGlobal.qtd; i++) {
-        if (jogadaAtual.sequenciaCor[i] != sequenciaAtualGlobal.sequenciaCor[i]) return false;
+        if (tentativaAtual.sequenciaCor[i] != sequenciaAtualGlobal.sequenciaCor[i]) return false;
     }
     return true;
 }
 void mostrarPontuacaoOrdenada() {
-    uint8_t ordem[MAX_LEDS];
+    uint8_t ordem[MAX_LEDS]; //array na stack (temporário)
+    // populando o array
     for (uint8_t i = 0; i < totalPlayers; i++) {
-        // TODO: PAREI AQ
+        ordem[i] = i;
+    }
+
+    // selection sort
+    for (uint8_t i = 0; i < totalPlayers - 1; i++) {
+        for (uint8_t j = i + 1; j < totalPlayers; j++) {
+            if (playerList[ordem[j]].score > playerList[ordem[i]].score) {
+                uint8_t temp = ordem[i];
+                ordem[i] = ordem[j];
+                ordem[j] = temp;
+            }
+        }
+    }
+
+    // exibição sequencial no LCD (do maior para o menor)
+    printaString(PONTUACAO_MSGS, 0, 0); //titulo no y=0
+    for (uint8_t i = 0; i < totalPlayers; i++) {
+        //array ordenado e.g. [4, 2, 3, 1] = 1º lugar: P4; ...; último: P1
+        uint8_t idx = ordem[i];
+
+        if (playerList[idx].ativo) {
+            lcd.clear();
+
+            // TEST:
+            lcd.print( + );
+            printaString(PONTUACAO_MSGS, idx, 1); //pontuação no y=1
+            lcd.print(playerList[idx].score);
+            delay(2000);
+        }
     }
 }
 
@@ -368,7 +437,7 @@ void menuSetup() {
     }
 }
 
-// TODO: menu pausa (mostrar que está em pausa e deixar opções pra mostrar ranking, score, terminar jogo, resetar...)
+// TEST: menu pausa
 void menuPausa() {
     uint8_t opcaoSelecionada = 1; //opção inicial na tela
 
@@ -394,16 +463,17 @@ void menuPausa() {
         }
         // se selecionou uma opção (clique duplo ou longo)
         else if (acao == CLIQUE_DUPLO || acao == CLIQUE_LONGO) {
-            // TODO:
             switch (opcaoSelecionada) {
-                case 1:
+                case 1: //voltar ao jogo
                     break;
-                case 2:
-                    mostrarPontuacaoAtual(); // TODO:
-                    break;
-                case 3:
+                case 2: //mostrar pontuação atual em ordem de ranking
+                    mostrarPontuacaoOrdenada();
+                    continue; //volta pro menu de pausa
+                case 3: //reiniciar jogo
+                    resetJogo();
                     break;
                 case 4:
+                    terminarJogo();
                     break;
             }
 
@@ -412,7 +482,8 @@ void menuPausa() {
             delay(1000); // REMOVE: 
             break;
         }
-    }}
+    }
+}
 
 // TODO:
 // função pra receber jogada (com lógica dos botões
@@ -476,21 +547,26 @@ void loop() {
 
     // TODO: deve haver um tempo para poder inserir sequência (até 5s após o tempo da sequência atual)
 
-    // recebe até que jogadaAtual.qtd == sequenciaAtualGlobal.qtd
-    // e compara jogadaAtual com sequenciaAtualGlobal
-    for (uint8_t i = 0; i < MAX_LEDS; i++) {
+    // recebe tentativa do jogador e compara com sequenciaAtualGlobal
+    for (uint8_t i = 0; i < MAX_LEDS; i++) { //itera botões
         uint8_t estadoBotaoAtual = digitalRead(PINOS_BOTOES[i]);
-        if (estadoBotaoAtual == 1) {
-            jogadaAtual.enqueue(static_cast<Color>(i));
-            if (jogadaAtual.qtd == sequenciaAtualGlobal.qtd) {
-                if (verificarJogada(jogadaAtual) == true) { // NOTE: se acertou sequência
+        if (estadoBotaoAtual == 1) { //se HIGH
+            tentativaAtual.enqueue(static_cast<Color>(i)); //insere cor escolhida na tentativa
+            if (tentativaAtual.qtd == sequenciaAtualGlobal.qtd) { //se tentativa tiver a qtd correta
+                if (verificarJogada(tentativaAtual) == true) { //se acertou sequência
                     // pontua jogador e passa pro prox
                     pontuarPlayer(PONTO_POR_JOGADA);
                     proxPlayer();
-                } else { // NOTE: se errou sequência
+                    // TODO: gera cor nova ate chegar no máx. se chegar no máx, termina jogo e mostra pontuação!! (incluir delay e msg mostrando q resetou o jogo (talvez no proprio resetJogo()))
+                    if (sequenciaAtualGlobal.qtd == MAX_SEQUENCIA) {
+                        finalizarJogo(); // TODO:
+                    }
+                    newRandomColor(); //+1 cor
+                } else { //se errou
                     // tira jogador e passa pro próx
-                    playerList[playerAtual].ativo = false;
+                    playerList[playerAtual].desativar();
                     proxPlayer();
+                    newRandomColor();
                 }
             }
         }
