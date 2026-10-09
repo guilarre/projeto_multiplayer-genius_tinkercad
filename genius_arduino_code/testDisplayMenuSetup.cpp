@@ -1,7 +1,8 @@
 #include <LiquidCrystal.h>
-#include <cstdint>
 #include <stdint.h> // CHECK:
 #include <avr/pgmspace.h>
+
+#define MAX_LEDS 4
 
 enum Color : uint8_t {
     VERDE = 0,
@@ -22,7 +23,7 @@ enum AcaoBotao : uint8_t {
 AcaoBotao verificarBotaoMenu();
 void menuSetup();
 void exibirCorLcd(Color cor);
-void printa_string(const char* const tabelaString, uint8_t idx, uint8_t screenY);
+void printaString(const char* const* tabelaString, uint8_t idx, uint8_t screenY);
 
 // pinos do lcd
 const uint8_t PIN_LCD_RS = 2;
@@ -47,19 +48,21 @@ LiquidCrystal lcd(PIN_LCD_RS, PIN_LCD_EN, PIN_LCD_D4, PIN_LCD_D5, PIN_LCD_D6, PI
 
 // NOTE: strings na memoria flash (PROGMEM)
 // strings pro menuSetup
-const char PROMPT_SETUP[] PROGMEM = "Escolha a qtd de jogadores...";
-const char OPCAO_SETUP_1[] PROGMEM = "1 jogadores";
-const char OPCAO_SETUP_2[] PROGMEM = "2 jogadores";
-const char OPCAO_SETUP_3[] PROGMEM = "3 jogadores";
-const char OPCAO_SETUP_4[] PROGMEM = "4 jogadores";
+const char PROMPT_SETUP[] PROGMEM = "Escolha:";
+const char OPCAO_1_SETUP[] PROGMEM = "1 jogador";
+const char OPCAO_2_SETUP[] PROGMEM = "2 jogadores";
+const char OPCAO_3_SETUP[] PROGMEM = "3 jogadores";
+const char OPCAO_4_SETUP[] PROGMEM = "4 jogadores";
+const char CONFIRMACAO_SETUP[] PROGMEM = "Confirmado:";
 
 // array de strings na flash
 const char* const MENU_SETUP_MSGS[] PROGMEM = {
     PROMPT_SETUP,
-    OPCAO_SETUP_1,
-    OPCAO_SETUP_2,
-    OPCAO_SETUP_3,
-    OPCAO_SETUP_4
+    OPCAO_1_SETUP,
+    OPCAO_2_SETUP,
+    OPCAO_3_SETUP,
+    OPCAO_4_SETUP,
+    CONFIRMACAO_SETUP
 };
 
 // NOTE: vars, funções, loop
@@ -73,28 +76,93 @@ uint8_t contagemCliques = 0;
 bool cliqueLongoProcessado = false;
 
 // printa string no display LCD (x do cursor = 0)
-// TEST: checar uso de const char* const
-void printaString(const char* const tabelaString, uint8_t idx, uint8_t screenY) {
+void printaString(const char* const* tabelaString, uint8_t idx, uint8_t screenY) {
     const char* string = (const char*)pgm_read_ptr(&(tabelaString[idx]));
 
+    //limpa
     lcd.setCursor(0, screenY);
     lcd.print("                ");
+    //escreve
     lcd.setCursor(0, screenY);
     lcd.print((const __FlashStringHelper*)string);
 }
 
 AcaoBotao verificarBotaoMenu() {
+    uint8_t leituraAtual = digitalRead(PINO_BOTAO_MENU); //INPUT_PULLUP
+    unsigned long agora = millis();
 
+    // pré-processando sinal
+    if (leituraAtual != ultimoEstadoBotaoMenu) {
+        delay(TEMPO_DEBOUNCE);
+        leituraAtual = digitalRead(PINO_BOTAO_MENU);
+
+        if (leituraAtual != ultimoEstadoBotaoMenu) {
+            ultimoEstadoBotaoMenu = leituraAtual;
+
+            if (leituraAtual == LOW) {
+                tempoPressionado = agora;
+                cliqueLongoProcessado = false;
+            } else {
+                if (!cliqueLongoProcessado) {
+                    contagemCliques++;
+                    tempoLiberado = agora;
+                }
+            }
+        }
+    }
+
+    // checagem de clique longo (botão mantido em LOW)
+    if (leituraAtual == LOW && !cliqueLongoProcessado) {
+        if (agora - tempoPressionado >= TEMPO_CLIQUE_LONGO) {
+            cliqueLongoProcessado = true;
+            contagemCliques = 0;
+            return CLIQUE_LONGO;
+        }
+    }
+
+    // checagem de clique simples ou duplo após liberação (HIGH)
+    if (contagemCliques > 0 && leituraAtual == HIGH) {
+        if (contagemCliques >= 2) {
+            contagemCliques = 0;
+            return CLIQUE_DUPLO;
+        }
+        if (agora - tempoLiberado >= TEMPO_CLIQUE_DUPLO) {
+            contagemCliques = 0;
+            return CLIQUE_SIMPLES;
+        }
+    }
+
+    return ACAO_NENHUMA;
 }
 
 void menuSetup() {
-    uint8_t estadoBotaoMenu = digitalRead(PINO_BOTAO_MENU);
-    printaString(MENU_SETUP_MSGS, 0);
+    uint8_t opcaoSelecionada = 1; // padrão: 1 jogador (índice 1 no MENU_SETUP_MSGS)
 
-    // BACKLOG: blinkingCursor(); //while awaits input??
+    ultimoEstadoBotaoMenu = digitalRead(PINO_BOTAO_MENU);
+    contagemCliques = 0;
+    cliqueLongoProcessado = false;
 
-    // TODO:
-    if (estadoBotaoMenu == 0 && ) {
+    lcd.clear();
+    printaString(MENU_SETUP_MSGS, 0, 0); // Linha 0: Prompt
+    printaString(MENU_SETUP_MSGS, opcaoSelecionada, 1); // Linha 1: Opção
+
+    // loop bloqueante até a confirmação da seleção
+    while (true) {
+        AcaoBotao acao = verificarBotaoMenu();
+
+        if (acao == CLIQUE_SIMPLES) {
+            // avança para a próxima opção (rotaciona de 1 a 4)
+            opcaoSelecionada = (opcaoSelecionada % 4) + 1;
+            printaString(MENU_SETUP_MSGS, opcaoSelecionada, 1);
+        }
+        else if (acao == CLIQUE_DUPLO || acao == CLIQUE_LONGO) {
+            // confirmação da opção
+            lcd.clear();
+            printaString(MENU_SETUP_MSGS, 5, 0);
+            printaString(MENU_SETUP_MSGS, opcaoSelecionada, 1);
+            delay(1500);
+            break;
+        }
     }
 }
 
@@ -117,4 +185,8 @@ extern "C" void setup() {
 }
 
 extern "C" void loop() {
+    delay(2000);
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print("--fim do teste--");
 }
