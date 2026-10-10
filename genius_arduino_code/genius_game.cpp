@@ -1,37 +1,17 @@
-// BACKLOG: - selecionar num de jogadores através dos botões de jogadores??
-//
-// TODO:
-// - ligar leds no momento de selecionar num de jogadores no menuSetup()
-// pra ter indicação visual de onde fica o botão de cada jogador
-//
-// TODO: checar quantos segundos leva pra mostrar sequencia atual e se deve diminuir ao longo do jogo
-//
-// TODO: pensar melhor como será sistema de pontuação
-//
-// TODO: pensar no feedback ao user -> luz, som, ...?
-// som qnd apertar botao, qnd acertar, errar..
-//
-// TODO: persistência na memória pra guardar highscore
-//
-// TODO: pesquisar em como deixar a mensagem persistir na tela se chamada dentro de loop()
-//
-// FIX: os turnos dagt devem incrementar conforme cada player joga
-//
-// TEST: talvez deixar sequencia até 20..?
+// HACK: existe um bug no compilador do arduino, onde funções que recebem tipos definidos pelo desenvolvedor (e.g. verificarJogada(filaCor tentativa)) dão erro. a solução atual seria usar funções que recebem apenas tipos padrões (uint8_t, int, char...) como parâmetro, e utilizar variáveis GLOBAIS.
+// (esse erro ocorre pq o compilador do arduino (pelo menos no tinkercad) não deixa de sobrescrever os protótipos das nossas funções, por algum motivo.)
 
-// CHECK: ver quais imports deve manter
-#include <stdint.h> // REMOVE:
-#include <stdlib.h>
-#include <sys/types.h>
 #include <LiquidCrystal.h>
 #include <avr/pgmspace.h>
 
 #define MAX_LEDS 4
 #define MAX_PLAYERS 4
-#define MAX_SEQUENCIA 15
+#define MAX_SEQUENCIA 12
 #define PONTO_POR_ACERTO 100
 #define STRING_BUFFER_SIZE 100
-#define TEMPO_LED_ACESO 500
+#define TEMPO_LED_ACESO 400
+
+// tem que declarar prototipo aqui p nao dar problema
 
 // SECTION: enums, structs e classes
 
@@ -121,7 +101,7 @@ AcaoBotao verificarBotaoMenu();
 void menuSetup();
 void menuPausa();
 void printaString(const char* const* tabelaString, uint8_t idx, uint8_t screenY);
-bool verificarJogada(filaCor tentativa);
+bool verificarJogada();
 void mostrarPlacar();
 void resetJogo();
 void terminarJogo();
@@ -136,12 +116,11 @@ void mostrarSequenciaGlobal();
 const uint8_t PINOS_LEDS[MAX_LEDS] = {13, 12, 11, 10};
 const uint8_t PINOS_BOTOES[MAX_LEDS] = {9, 8, 7, 6};
 const uint8_t PINO_BOTAO_MENU = 5;
-// CHECK: VAI MANTER LOGICA DO ON/OFF??
-const uint8_t PINO_BOTAO_ON_OFF = 4;
+const uint8_t PINO_RANDOM_SEED = A4;
 // constantes de tempo p clique
 const uint16_t TEMPO_DEBOUNCE = 50; //50ms pra como filtro pra ruidos
-const uint16_t TEMPO_CLIQUE_DUPLO = 300; // CHECK: ver se vai usar msm
-const uint16_t TEMPO_CLIQUE_LONGO = 1000;
+const uint16_t TEMPO_CLIQUE_DUPLO = 500; // CHECK: ver se vai usar msm
+const uint16_t TEMPO_CLIQUE_LONGO = 500;
 // pinos do lcd
 const uint8_t PIN_LCD_RS = 2;
 const uint8_t PIN_LCD_EN = 3;
@@ -224,9 +203,21 @@ const char* const PONTUACAO_MSGS[] PROGMEM = {
 };
 // mensagens de sistema
 const char CONFIRMACAO_RESET[] PROGMEM = "Reiniciando...";
+const char COUNTDOWN_3[] PROGMEM = "3...";
+const char COUNTDOWN_2[] PROGMEM = "2...";
+const char COUNTDOWN_1[] PROGMEM = "1...";
+const char COUNTDOWN_GO[] PROGMEM = "START!";
+const char FEEDBACK_ERROU[] PROGMEM = "ERROU!";
+const char FEEDBACK_ACERTOU[] PROGMEM = "ACERTOU!";
 // array de strings
 const char* const MSGS_SISTEMA[] PROGMEM {
     CONFIRMACAO_RESET,
+    COUNTDOWN_3,
+    COUNTDOWN_2,
+    COUNTDOWN_1,
+    COUNTDOWN_GO,
+    FEEDBACK_ERROU,
+    FEEDBACK_ACERTOU
 };
 
 // SECTION: vars globais e funções do jogo
@@ -239,8 +230,8 @@ unsigned long tempoLiberado = 0;
 uint8_t contagemCliques = 0;
 bool cliqueLongoProcessado = false;
 // vars e funções filaCor
-filaCor sequenciaAtualGlobal; //fila global
-filaCor tentativaAtual;
+filaCor sequenciaAtualGlobal = filaCor(); //fila global
+filaCor tentativaAtualGlobal = filaCor();
 // função pra inserir uma cor aleatória na var global
 void newRandomColor() {
     uint8_t randNum = random(0, 4); //num aleatório de 0 a 3
@@ -255,6 +246,8 @@ uint8_t playerAtual = 0;
 uint8_t totalPlayers = 1;
 // função pra iterar até o próx player válido
 void proxPlayer() {
+    if (totalPlayers == 1) return;
+
     uint8_t proxPlayer = playerAtual; //ponteiro em playerList
 
     do {
@@ -270,7 +263,7 @@ void pontuarPlayer(uint8_t pontos) {
 
 // SECTION: funções do jogo
 
-// TEST: função pra resetar jogo (caso precise)
+// função pra resetar jogo
 void resetJogo() {
     // CHECK: ver se falta mais algo pra resetar:
     sequenciaAtualGlobal = filaCor(); //valores padrões de filaCor
@@ -288,19 +281,21 @@ void resetJogo() {
 
     // chama setup novamente...
     menuSetup();
+    newRandomColor();
 }
-// TEST: função pra verificar sequência global com tentativa inserida pelo player
-bool verificarJogada(filaCor tentativaAtual) {
+// função pra verificar sequência global com tentativa inserida pelo player
+bool verificarJogada() {
     // cria uma cópia da variável global
     filaCor sequenciaAtualCopia = sequenciaAtualGlobal;
+    filaCor tentativaAtualCopia = tentativaAtualGlobal;
 
-    if (tentativaAtual.qtd != sequenciaAtualCopia.qtd) return false;
+    if (tentativaAtualCopia.qtd != sequenciaAtualCopia.qtd) return false;
 
     for (uint8_t i = 0; i < sequenciaAtualGlobal.qtd; i++) {
         Color corAtualTentativa;
         Color corAtualGlobal;
 
-        tentativaAtual.dequeue(corAtualTentativa);
+        tentativaAtualCopia.dequeue(corAtualTentativa);
         sequenciaAtualCopia.dequeue(corAtualGlobal);
 
         if (corAtualTentativa != corAtualGlobal) return false;
@@ -325,34 +320,55 @@ void mostrarPlacar() {
         }
     }
 
-    // exibição sequencial do maior pro menor
-    for (uint8_t i = 0; i < totalPlayers; i++) {
-        //array ordenado e.g. [4, 2, 3, 1] = 1º lugar: P4; ...; último: P1
-        uint8_t idx = ordem[i];
+    bool sairPlacar = false; //flag de controle
+    while (!sairPlacar) {
+        // loop dos players (exibição do maior pro menor)
+        for (uint8_t i = 0; i < totalPlayers && !sairPlacar; i++) {
+            //array ordenado e.g. [4, 2, 3, 1] = 1º lugar: P4; ...; último: P1
+            uint8_t idx = ordem[i];
 
-        if (playerList[idx].ativo) {
-            lcd.clear();
+            if (playerList[idx].ativo) {
+                lcd.clear();
 
-            lcd.setCursor(0, 0); //ranking no y=0
-            lcd.print(F("-- "));
-            lcd.print(i+1);
-            lcd.print(F("o lugar --"));
+                lcd.setCursor(0, 0); //ranking no y=0
+                lcd.print(F("-- "));
+                lcd.print(i+1);
+                lcd.print(F("o lugar --"));
 
-            lcd.setCursor(0, 1); //pontuação no y=1
-            printaString(PONTUACAO_MSGS, idx, 1);
-            lcd.print(playerList[idx].score);
-            delay(2000); //dura 2s na tela
+                lcd.setCursor(0, 1); //pontuação no y=1
+                printaString(PONTUACAO_MSGS, idx, 1);
+                lcd.print(playerList[idx].score);
+
+                // verifica se quer sair
+                unsigned long inicioEspera = millis();
+                while (millis() - inicioEspera < 2000) { //2s na tela
+                    // se quiser sair
+                    if (verificarBotaoMenu() == CLIQUE_SIMPLES) {
+                        sairPlacar = true; //sai do loop
+                        break;
+                    }
+                    delay(10); //debounce
+                }
+            }
         }
     }
 }
-// TEST: função pra terminar e mostrar placar até que user deseje resetar
+// função pra terminar e mostrar placar até que user deseje resetar
 void terminarJogo() {
-    AcaoBotao acao = verificarBotaoMenu();
-    while (acao != CLIQUE_SIMPLES) { //enquanto a pessoa não apertar o botão de menu...
-        mostrarPlacar();
-        acao = verificarBotaoMenu();
-    }
+    mostrarPlacar();
     resetJogo();
+}
+// função alternativa pra delay(), pra verificar pausa
+bool delayComPausa(unsigned long tempoMs) {
+    unsigned long inicio = millis();
+    while (millis() - inicio < tempoMs) {
+        if (verificarBotaoMenu() == CLIQUE_SIMPLES) {
+            menuPausa();
+            return true; //foi pausado
+        }
+        delay(10); //bom pra estabilidade do botão e p CPU respirar, aparentemente
+    }
+    return false; //não pausou
 }
 
 // SECTION: funções pro display
@@ -463,7 +479,7 @@ void menuSetup() {
     }
 }
 
-// TEST: menu pausa
+// menu pausa
 void menuPausa() {
     uint8_t opcaoSelecionada = 1; //opção inicial na tela
 
@@ -494,6 +510,8 @@ void menuPausa() {
                     break;
                 case 2: //mostrar placar + pontuação
                     mostrarPlacar();
+                    opcaoSelecionada = 1; //opção 1: voltar
+                    printaString(MENU_PAUSA_MSGS, opcaoSelecionada, 1); //mostra opção
                     continue; //volta pro menu de pausa
                 case 3: //reiniciar jogo
                     resetJogo();
@@ -503,26 +521,25 @@ void menuPausa() {
                     break;
             }
 
-            lcd.clear(); // REMOVE: só pra debug
-            lcd.print(F("saiu menuPausa")); // REMOVE: 
-            delay(1000); // REMOVE: 
             break;
         }
     }
 }
 
-// TEST: mostra sequência pro P1
+// mostra sequência nos leds
+// TODO: acho que não deveria verificar pausas no meio da sequência
 void mostrarSequenciaGlobal() {
     for (uint8_t i = 0; i < sequenciaAtualGlobal.qtd; i++) {
         Color corAtual = sequenciaAtualGlobal.sequenciaCor[i];
-        digitalWrite(PINOS_LEDS[corAtual], HIGH);
-        delay(TEMPO_LED_ACESO); //tempo ligado
-        digitalWrite(PINOS_LEDS[corAtual], LOW);
-        delay(200); //tempo desligado antes de trocar cor
+        digitalWrite(PINOS_LEDS[corAtual], HIGH); //acende
+        delay(TEMPO_LED_ACESO);
+        digitalWrite(PINOS_LEDS[corAtual], LOW); //apaga
+        delay(200);
     }
 }
 
 // SECTION: setup + loop
+
 // NOTE: em setup, as coisas rodam apenas 1 vez, no início.
 void setup() {
     // aqui realizamos o setup desejado pros pinos do arduino
@@ -531,25 +548,24 @@ void setup() {
         pinMode(PINOS_BOTOES[i], INPUT);
     }
 
-    // TEST: ver se INPUT_PULLUP dá certo atualmente no circuito
     pinMode(PINO_BOTAO_MENU, INPUT_PULLUP);
-    pinMode(PINO_BOTAO_ON_OFF, INPUT_PULLUP);
 
     lcd.begin(16, 2);
 
     // leitura analógica de um pino desconectado como seed
-    randomSeed(analogRead(2));
-    Serial.begin(9600); // REMOVE: pra teste apenas
+    randomSeed(analogRead(PINO_RANDOM_SEED));
 
     menuSetup(); // NOTE: user escolhe qtd de jogadores
+    newRandomColor(); //primeira cor
 }
 
-// SECTION: loop contínuo do jogo
-// TODO: checagem do tempo de input (deve haver um tempo para poder inserir sequência (até 5s após o tempo da sequência atual))
+// TODO: checagem do tempo de input (deve haver um tempo para poder inserir sequência (e.g. até 5s após o tempo da sequência atual))
 // TODO: aumentar dificuldade conforme passam rodadas
+// NOTE: loop contínuo do jogo
 void loop() {
     // verifica botão menu/pausa
     AcaoBotao acao = verificarBotaoMenu();
+    // FIX: chamada tem q ocorrer de qualquer local do código
     if (acao == CLIQUE_SIMPLES) {
         menuPausa();
     }
@@ -558,12 +574,18 @@ void loop() {
     lcd.clear();
     printaString(VEZ_ATUAL_MSGS, playerAtual, 0);
 
+    // antes de mostrar a sequência global, mensagem de 3 2 1... go
+    for (uint8_t i = 1; i < 5; i++) {
+        printaString(MSGS_SISTEMA, i, 1);
+        delayComPausa(1000);
+    }
+
     mostrarSequenciaGlobal(); //a cada player, incrementa e mostra
 
-    tentativaAtual = filaCor(); //limpa tentativaAtual pro player novo
+    tentativaAtualGlobal = filaCor(); //limpa tentativaAtualGlobal pro player novo
 
     // recebe tentativa do player e compara com sequenciaAtualGlobal
-    while (tentativaAtual.qtd < sequenciaAtualGlobal.qtd) {
+    while (tentativaAtualGlobal.qtd < sequenciaAtualGlobal.qtd) {
         for (uint8_t i = 0; i < MAX_LEDS; i++) { //itera botões
             if (digitalRead(PINOS_BOTOES[i]) == HIGH) {
                 // pisca cor selecionada no LED (feedback)
@@ -572,7 +594,7 @@ void loop() {
                 digitalWrite(PINOS_LEDS[i], LOW);
 
                 // insere cor escolhida na tentativa
-                tentativaAtual.enqueue(static_cast<Color>(i));
+                tentativaAtualGlobal.enqueue(static_cast<Color>(i));
 
                 // debounce enquanto botão n é solto
                 while (digitalRead(PINOS_BOTOES[i]) == HIGH) {
@@ -584,7 +606,11 @@ void loop() {
     }
 
     // se tentativa tiver a qtd correta, hora de verificar
-    if (verificarJogada(tentativaAtual)) { //se acertou sequência
+    if (verificarJogada()) { //se acertou sequência
+        // TODO: feedback de que acertou (animação nos leds e msg no display)
+        printaString(MSGS_SISTEMA, 6, 1);
+        delayComPausa(1000);
+
         // pontua jogador e passa pro prox
         pontuarPlayer(PONTO_POR_ACERTO);
         proxPlayer();
@@ -595,8 +621,40 @@ void loop() {
             newRandomColor(); //se acertar, +1 cor
         }
     } else { //se errou
-        // tira jogador e passa pro próx
-        playerList[playerAtual].desativar();
-        proxPlayer();
+        printaString(MSGS_SISTEMA, 5, 1);
+        delayComPausa(1000);
+        if (totalPlayers == 1) { //se errou e só tem 1 player
+            terminarJogo(); //termina e mostra placar
+        } else {
+            // tira jogador e passa pro próx
+            playerList[playerAtual].desativar();
+            totalPlayers -= 1;
+            proxPlayer();
+        }
     }
 }
+
+//////////////////////////////////////////////////////////////////////////////
+//
+// FIX: não precisa de dois tipos de botões diferentes. padronizar ambos pra usarem INPUT_PULLUP e usarem o resistor interno da placa
+//
+// TODO: remodelar seleção de qtd de jogadores pra ser através dos botões dos leds
+//
+// TODO: ligar leds no momento de selecionar num de jogadores no menuSetup()
+// pra ter indicação visual de onde fica o botão de cada jogador
+//
+// TODO: checar quantos segundos leva pra mostrar sequencia atual e se deve diminuir ao longo do jogo
+//
+// TODO: pensar melhor como será sistema de pontuação
+//
+// TODO: pensar no feedback ao user -> luz, som, som qnd selecionar opção, qnd acertar, errar..
+//
+// TEST: talvez deixar sequencia até 15/20..?
+//
+// TODO: quando for implementar mesmo no hardware, lembrar de ajeitar perna do potenciômetro
+//
+// BACKLOG:
+// - selecionar num de jogadores através dos botões de jogadores??
+// - persistência na memória pra guardar highscore
+// - limitar numero de cores repetidas na sequência.. (2 ou 3 max)
+// - se fizer houver bateria, vai ter que ter como ligar/desligar (botão on/off ou switch?)
