@@ -638,6 +638,8 @@ void loop() {
 //
 // FIX: não precisa de dois tipos de botões diferentes. padronizar ambos pra usarem INPUT_PULLUP e usarem o resistor interno da placa
 //
+// FIX: verificar a cada inserção
+//
 // TODO: remodelar seleção de qtd de jogadores pra ser através dos botões dos leds
 //
 // TODO: ligar leds no momento de selecionar num de jogadores no menuSetup()
