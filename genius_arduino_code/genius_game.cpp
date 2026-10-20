@@ -545,7 +545,7 @@ void setup() {
     // aqui realizamos o setup desejado pros pinos do arduino
     for (uint8_t i = 0; i < MAX_LEDS; i++) {
         pinMode(PINOS_LEDS[i], OUTPUT);
-        pinMode(PINOS_BOTOES[i], INPUT);
+        pinMode(PINOS_BOTOES[i], INPUT_PULLUP);
     }
 
     pinMode(PINO_BOTAO_MENU, INPUT_PULLUP);
@@ -587,7 +587,7 @@ void loop() {
     // recebe tentativa do player e compara com sequenciaAtualGlobal
     while (tentativaAtualGlobal.qtd < sequenciaAtualGlobal.qtd) {
         for (uint8_t i = 0; i < MAX_LEDS; i++) { //itera botões
-            if (digitalRead(PINOS_BOTOES[i]) == HIGH) {
+            if (digitalRead(PINOS_BOTOES[i]) == LOW) {
                 // pisca cor selecionada no LED (feedback)
                 digitalWrite(PINOS_LEDS[i], HIGH);
                 delay(TEMPO_LED_ACESO);
@@ -597,7 +597,7 @@ void loop() {
                 tentativaAtualGlobal.enqueue(static_cast<Color>(i));
 
                 // debounce enquanto botão n é solto
-                while (digitalRead(PINOS_BOTOES[i]) == HIGH) {
+                while (digitalRead(PINOS_BOTOES[i]) == LOW) {
                     delay(10);
                 }
                 break;
