@@ -1,5 +1,5 @@
-// HACK: existe um bug no compilador do arduino, onde funções que recebem tipos definidos pelo desenvolvedor (e.g. verificarJogada(filaCor tentativa)) dão erro. a solução atual seria usar funções que recebem apenas tipos padrões (uint8_t, int, char...) como parâmetro, e utilizar variáveis GLOBAIS.
-// (esse erro ocorre pq o compilador do arduino (pelo menos no tinkercad) não deixa de sobrescrever os protótipos das nossas funções, por algum motivo.)
+// HACK: existe um bug no compilador do arduino, onde funções que recebem tipos definidos pelo desenvolvedor como parâmetro (e.g. verificarJogada(filaCor tentativa)) dão erro. a solução atual seria usar funções que recebem apenas tipos padrões (uint8_t, int, char...) como parâmetro, e utilizar variáveis GLOBAIS pra não ter q passá-los como parâmetro.
+// (esse erro ocorre pq o compilador do arduino (pelo menos no tinkercad) não para de sobrescrever os protótipos das nossas funções, por algum motivo.)
 
 #include <LiquidCrystal.h>
 #include <avr/pgmspace.h>
@@ -10,8 +10,6 @@
 #define PONTO_POR_ACERTO 100
 #define STRING_BUFFER_SIZE 100
 #define TEMPO_LED_ACESO 400
-
-// tem que declarar prototipo aqui p nao dar problema
 
 // SECTION: enums, structs e classes
 
@@ -70,6 +68,7 @@ class Player {
         uint8_t id;
         uint16_t score;
         bool ativo;
+        bool jogou;
 
         // construtor
         Player() {
@@ -81,6 +80,7 @@ class Player {
         void reset() {
             score = 0; //reseta score
             ativo = false; //desativa player
+            jogou = false;
         }
 
         void ativar() {
@@ -89,6 +89,10 @@ class Player {
 
         void desativar() {
             ativo = false; //desativa player
+        }
+
+        void setJogou() {
+            jogou = true; //se jogou nesta partida (mesmo q inativo)
         }
 };
 
@@ -209,6 +213,8 @@ const char COUNTDOWN_1[] PROGMEM = "1...";
 const char COUNTDOWN_GO[] PROGMEM = "START!";
 const char FEEDBACK_ERROU[] PROGMEM = "ERROU!";
 const char FEEDBACK_ACERTOU[] PROGMEM = "ACERTOU!";
+const char FEEDBACK_GANHOU[] PROGMEM = "VOCE GANHOU!";
+const char FEEDBACK_ACABOU[] PROGMEM = "O JOGO ACABOU!";
 // array de strings
 const char* const MSGS_SISTEMA[] PROGMEM {
     CONFIRMACAO_RESET,
@@ -217,7 +223,9 @@ const char* const MSGS_SISTEMA[] PROGMEM {
     COUNTDOWN_1,
     COUNTDOWN_GO,
     FEEDBACK_ERROU,
-    FEEDBACK_ACERTOU
+    FEEDBACK_ACERTOU,
+    FEEDBACK_GANHOU,
+    FEEDBACK_ACABOU
 };
 
 // SECTION: vars globais e funções do jogo
@@ -244,6 +252,8 @@ Player playerList[MAX_PLAYERS]; //cria os 4 players na memória
 uint8_t playerAtual = 0;
 // qtd jogadores atual // CHECK:checar se qnd muda tá alterando efetivamente
 uint8_t totalPlayers = 1;
+// qtd selecionada originalmente, pra ser usado em mostrarPlacar()
+uint8_t qtdOriginalPlayers = 1;
 // função pra iterar até o próx player válido
 void proxPlayer() {
     if (totalPlayers == 1) return;
@@ -251,7 +261,7 @@ void proxPlayer() {
     uint8_t proxPlayer = playerAtual; //ponteiro em playerList
 
     do {
-        proxPlayer = (proxPlayer + 1) % totalPlayers;
+        proxPlayer = (proxPlayer + 1) % MAX_PLAYERS;
     } while (!playerList[proxPlayer].ativo && proxPlayer != playerAtual);
 
     playerAtual = proxPlayer;
@@ -259,6 +269,13 @@ void proxPlayer() {
 // função pra pontuar playerAtual
 void pontuarPlayer(uint8_t pontos) {
     playerList[playerAtual].score += pontos;
+}
+// função pra quando jogador atual errar e precisar sair
+void retirarPlayerEIterar() {
+    uint8_t playerASair = playerAtual;
+    proxPlayer();
+    playerList[playerASair].desativar();
+    totalPlayers--;
 }
 
 // SECTION: funções do jogo
@@ -272,6 +289,7 @@ void resetJogo() {
     }
     playerAtual = 0;
     totalPlayers = 1;
+    qtdOriginalPlayers = 1;
 
     // msg confirmando que resetou tudo
     lcd.clear();
@@ -304,13 +322,13 @@ bool verificarJogada() {
 void mostrarPlacar() {
     uint8_t ordem[MAX_LEDS]; //array na stack (temporário)
     // populando o array
-    for (uint8_t i = 0; i < totalPlayers; i++) {
+    for (uint8_t i = 0; i < qtdOriginalPlayers; i++) {
         ordem[i] = i;
     }
 
     // selection sort
-    for (uint8_t i = 0; i < totalPlayers - 1; i++) {
-        for (uint8_t j = i + 1; j < totalPlayers; j++) {
+    for (uint8_t i = 0; i < qtdOriginalPlayers - 1; i++) {
+        for (uint8_t j = i + 1; j < qtdOriginalPlayers; j++) {
             if (playerList[ordem[j]].score > playerList[ordem[i]].score) {
                 uint8_t temp = ordem[i];
                 ordem[i] = ordem[j];
@@ -322,11 +340,11 @@ void mostrarPlacar() {
     bool sairPlacar = false; //flag de controle
     while (!sairPlacar) {
         // loop dos players (exibição do maior pro menor)
-        for (uint8_t i = 0; i < totalPlayers && !sairPlacar; i++) {
+        for (uint8_t i = 0; i < qtdOriginalPlayers && !sairPlacar; i++) {
             //array ordenado e.g. [4, 2, 3, 1] = 1º lugar: P4; ...; último: P1
             uint8_t idx = ordem[i];
 
-            if (playerList[idx].ativo) {
+            if (playerList[idx].jogou) {
                 lcd.clear();
 
                 lcd.setCursor(0, 0); //ranking no y=0
@@ -334,15 +352,15 @@ void mostrarPlacar() {
                 lcd.print(i+1);
                 lcd.print(F("o lugar --"));
 
-                lcd.setCursor(0, 1); //pontuação no y=1
-                printaString(PONTUACAO_MSGS, idx, 1);
+                printaString(PONTUACAO_MSGS, idx, 1); //pontuação no y=1
                 lcd.print(playerList[idx].score);
 
                 // verifica se quer sair
                 unsigned long inicioEspera = millis();
                 while (millis() - inicioEspera < 2000) { //2s na tela
                     // se quiser sair
-                    if (verificarBotaoMenu() == CLIQUE_SIMPLES) {
+                    uint8_t estadoBotao = verificarBotaoMenu();
+                    if (estadoBotao == CLIQUE_SIMPLES || estadoBotao == CLIQUE_DUPLO || estadoBotao == CLIQUE_LONGO) {
                         sairPlacar = true; //sai do loop
                         break;
                     }
@@ -464,9 +482,11 @@ void menuSetup() {
         else if (acao == CLIQUE_DUPLO || acao == CLIQUE_LONGO) {
             // seta globalmente
             totalPlayers = opcaoSelecionada;
+            qtdOriginalPlayers = totalPlayers;
             // ativa nossos objetos Player na memória
             for (uint8_t i = 0; i < totalPlayers; i++) {
                 playerList[i].ativar();
+                playerList[i].setJogou();
             }
             // feedback da confirmação
             lcd.clear();
@@ -540,6 +560,8 @@ void mostrarSequenciaGlobal() {
 
 // NOTE: em setup, as coisas rodam apenas 1 vez, no início.
 void setup() {
+    // DEBUG:
+    Serial.begin(9600);
     // aqui realizamos o setup desejado pros pinos do arduino
     for (uint8_t i = 0; i < MAX_LEDS; i++) {
         pinMode(PINOS_LEDS[i], OUTPUT);
@@ -555,9 +577,14 @@ void setup() {
 
     menuSetup(); // NOTE: user escolhe qtd de jogadores
     newRandomColor(); //primeira cor
+
+    // countdown antes de mostrar sequência
+    for (uint8_t i = 1; i < 5; i++) {
+        printaString(MSGS_SISTEMA, i, 1);
+        delayComPausa(1000);
+    }
 }
 
-// TODO: checagem do tempo de input (deve haver um tempo para poder inserir sequência (e.g. até 5s após o tempo da sequência atual))
 // NOTE: loop contínuo do jogo
 void loop() {
     // verifica botão menu/pausa
@@ -570,13 +597,6 @@ void loop() {
     // mostra de quem é a vez atual em y=0
     lcd.clear();
     printaString(VEZ_ATUAL_MSGS, playerAtual, 0);
-
-    // antes de mostrar a sequência global, mensagem de 3 2 1... go
-    // TEST: testar colocar delay menor OU mostrar countdown apenas na primeira rodada
-    for (uint8_t i = 1; i < 5; i++) {
-        printaString(MSGS_SISTEMA, i, 1);
-        delayComPausa(1000);
-    }
 
     mostrarSequenciaGlobal(); //a cada player, incrementa e mostra
 
@@ -605,7 +625,7 @@ void loop() {
 
     // se tentativa tiver a qtd correta, hora de verificar
     if (verificarJogada()) { //se acertou sequência
-        printaString(MSGS_SISTEMA, 6, 1);
+        printaString(MSGS_SISTEMA, 6, 1); //ACERTOU!
         delayComPausa(1000);
 
         // pontua jogador e passa pro prox
@@ -613,35 +633,38 @@ void loop() {
         proxPlayer();
         // verifica se sequência chegou na qtd máx.
         if (sequenciaAtualGlobal.qtd == MAX_SEQUENCIA) {
+            lcd.clear();
+            printaString(VEZ_ATUAL_MSGS, playerAtual, 0);
+            printaString(MSGS_SISTEMA, 7, 1); //VOCE GANHOU!
+            delay(1000);
             terminarJogo(); //termina e mostra placar
         } else {
             newRandomColor(); //se acertar, +1 cor
         }
     } else { //se errou
-        printaString(MSGS_SISTEMA, 5, 1);
+        printaString(MSGS_SISTEMA, 5, 1); //ERROU!
         delayComPausa(1000);
-        if (totalPlayers == 1) { //se errou e só tem 1 player
+        if (totalPlayers <= 2) { //se errou e só tem 1 player
+            lcd.clear();
+            printaString(MSGS_SISTEMA, 8, 1); //O JOGO ACABOU!
+            delay(1000);
             terminarJogo(); //termina e mostra placar
         } else {
             // tira jogador e passa pro próx
-            playerList[playerAtual].desativar();
-            totalPlayers -= 1;
-            proxPlayer();
+            retirarPlayerEIterar();
         }
     }
 }
 
 //////////////////////////////////////////////////////////////////////////////
 //
-// FIX: ao finalizar o jogo, n retira player atual (pelo menos na tela)
 // FIX: verificar a cada inserção
 //
 // TODO:
 // - remodelar seleção de qtd de jogadores pra ser através dos botões dos leds
-// - ligar leds no momento de selecionar num de jogadores no menuSetup() pra ter indicação visual de onde fica o botão de cada jogador
-// - checar quantos segundos leva pra mostrar sequencia atual e se deve diminuir ao longo do jogo
-// - pensar melhor como será sistema de pontuação...
 // - melhorar feedback ao user -> piscar as luzes, som, som qnd selecionar opção, qnd acertar, errar..
+// - checagem do tempo de input (deve haver um tempo para poder inserir sequência (e.g. até 5s após o tempo da sequência atual))
+// - checar quantos segundos leva pra mostrar sequencia atual e se deve diminuir ao longo do jogo
 //
 // TEST: talvez deixar sequencia até 15/20..?
 //
@@ -651,3 +674,5 @@ void loop() {
 // - limitar numero de cores repetidas na sequência.. (2 ou 3 max)
 // - se fizer houver bateria, vai ter que ter como ligar/desligar (botão on/off ou switch?)
 // - aumentar dificuldade conforme passam rodadas
+// - tratar casos de colocação igual pra mais de 1 player (tiveram a mesma pontuação)
+// - pensar sistema de pontuação melhor...?
