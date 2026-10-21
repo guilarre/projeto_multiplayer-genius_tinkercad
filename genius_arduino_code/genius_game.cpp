@@ -265,7 +265,6 @@ void pontuarPlayer(uint8_t pontos) {
 
 // função pra resetar jogo
 void resetJogo() {
-    // CHECK: ver se falta mais algo pra resetar:
     sequenciaAtualGlobal = filaCor(); //valores padrões de filaCor
     // desativa players
     for (uint8_t i = 0; i < MAX_PLAYERS; i++) {
@@ -527,7 +526,6 @@ void menuPausa() {
 }
 
 // mostra sequência nos leds
-// TODO: acho que não deveria verificar pausas no meio da sequência
 void mostrarSequenciaGlobal() {
     for (uint8_t i = 0; i < sequenciaAtualGlobal.qtd; i++) {
         Color corAtual = sequenciaAtualGlobal.sequenciaCor[i];
@@ -560,7 +558,6 @@ void setup() {
 }
 
 // TODO: checagem do tempo de input (deve haver um tempo para poder inserir sequência (e.g. até 5s após o tempo da sequência atual))
-// TODO: aumentar dificuldade conforme passam rodadas
 // NOTE: loop contínuo do jogo
 void loop() {
     // verifica botão menu/pausa
@@ -575,6 +572,7 @@ void loop() {
     printaString(VEZ_ATUAL_MSGS, playerAtual, 0);
 
     // antes de mostrar a sequência global, mensagem de 3 2 1... go
+    // TEST: testar colocar delay menor OU mostrar countdown apenas na primeira rodada
     for (uint8_t i = 1; i < 5; i++) {
         printaString(MSGS_SISTEMA, i, 1);
         delayComPausa(1000);
@@ -607,7 +605,6 @@ void loop() {
 
     // se tentativa tiver a qtd correta, hora de verificar
     if (verificarJogada()) { //se acertou sequência
-        // TODO: feedback de que acertou (animação nos leds e msg no display)
         printaString(MSGS_SISTEMA, 6, 1);
         delayComPausa(1000);
 
@@ -636,27 +633,21 @@ void loop() {
 
 //////////////////////////////////////////////////////////////////////////////
 //
-// FIX: não precisa de dois tipos de botões diferentes. padronizar ambos pra usarem INPUT_PULLUP e usarem o resistor interno da placa
-//
+// FIX: ao finalizar o jogo, n retira player atual (pelo menos na tela)
 // FIX: verificar a cada inserção
 //
-// TODO: remodelar seleção de qtd de jogadores pra ser através dos botões dos leds
-//
-// TODO: ligar leds no momento de selecionar num de jogadores no menuSetup()
-// pra ter indicação visual de onde fica o botão de cada jogador
-//
-// TODO: checar quantos segundos leva pra mostrar sequencia atual e se deve diminuir ao longo do jogo
-//
-// TODO: pensar melhor como será sistema de pontuação
-//
-// TODO: pensar no feedback ao user -> luz, som, som qnd selecionar opção, qnd acertar, errar..
+// TODO:
+// - remodelar seleção de qtd de jogadores pra ser através dos botões dos leds
+// - ligar leds no momento de selecionar num de jogadores no menuSetup() pra ter indicação visual de onde fica o botão de cada jogador
+// - checar quantos segundos leva pra mostrar sequencia atual e se deve diminuir ao longo do jogo
+// - pensar melhor como será sistema de pontuação...
+// - melhorar feedback ao user -> piscar as luzes, som, som qnd selecionar opção, qnd acertar, errar..
 //
 // TEST: talvez deixar sequencia até 15/20..?
 //
-// TODO: quando for implementar mesmo no hardware, lembrar de ajeitar perna do potenciômetro
-//
 // BACKLOG:
-// - selecionar num de jogadores através dos botões de jogadores??
+// - selecionar num de jogadores através dos botões de jogadores
 // - persistência na memória pra guardar highscore
 // - limitar numero de cores repetidas na sequência.. (2 ou 3 max)
 // - se fizer houver bateria, vai ter que ter como ligar/desligar (botão on/off ou switch?)
+// - aumentar dificuldade conforme passam rodadas
