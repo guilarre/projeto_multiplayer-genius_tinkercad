@@ -588,8 +588,8 @@ void setup() {
 // NOTE: loop contínuo do jogo
 void loop() {
     // verifica botão menu/pausa
+    // CHECK: ver se ainda precisa, ou se pode só usar um delayComPausa(50)
     AcaoBotao acao = verificarBotaoMenu();
-    // FIX: chamada tem q ocorrer de qualquer local do código
     if (acao == CLIQUE_SIMPLES) {
         menuPausa();
     }
@@ -662,17 +662,17 @@ void loop() {
 //
 // TODO:
 // - remodelar seleção de qtd de jogadores pra ser através dos botões dos leds
-// - melhorar feedback ao user -> piscar as luzes, som, som qnd selecionar opção, qnd acertar, errar..
 // - checagem do tempo de input (deve haver um tempo para poder inserir sequência (e.g. até 5s após o tempo da sequência atual))
 // - checar quantos segundos leva pra mostrar sequencia atual e se deve diminuir ao longo do jogo
 //
 // TEST: talvez deixar sequencia até 15/20..?
 //
 // BACKLOG:
+// - melhorar feedback ao user -> piscar as luzes ou som(??) qnd acertar, errar..
 // - selecionar num de jogadores através dos botões de jogadores
-// - persistência na memória pra guardar highscore
-// - limitar numero de cores repetidas na sequência.. (2 ou 3 max)
-// - se fizer houver bateria, vai ter que ter como ligar/desligar (botão on/off ou switch?)
+// - persistência na memória pra guardar highscore entre jogadas...
+// - limitar numero de cores repetidas na sequência..(?) (3 max?)
+// - se houver bateria, vai ter que ter como ligar/desligar (botão on/off ou switch?)
 // - aumentar dificuldade conforme passam rodadas
 // - tratar casos de colocação igual pra mais de 1 player (tiveram a mesma pontuação)
 // - pensar sistema de pontuação melhor...?
